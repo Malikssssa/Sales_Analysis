@@ -1,0 +1,74 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+file_path = "sales_data_large2.csv"  # Update with actual file path
+df = pd.read_csv(file_path, parse_dates=["date"], dayfirst=True)
+df.fillna(method='ffill', inplace=True)
+
+
+Q1 = df["sales"].quantile(0.25)
+Q3 = df["sales"].quantile(0.75)
+IQR = Q3 - Q1
+lower_bound = Q1 - 1.5 * IQR
+upper_bound = Q3 + 1.5 * IQR
+df = df[(df["sales"] >= lower_bound) & (df["sales"] <= upper_bound)]
+
+
+df["profit"] = df["sales"] * np.random.uniform(0.2, 0.5, size=len(df))  # Simulated profit
+df["cost"] = df["sales"] - df["profit"]  # Calculating cost
+df["month"] = df["date"].dt.to_period("M")
+
+df_monthly = df.groupby("month")[["sales", "profit", "cost"]].sum().reset_index()
+df_monthly["moving_avg"] = df_monthly["sales"].rolling(window=3, min_periods=1).mean()
+df["growth_rate"] = df["sales"].pct_change()
+
+
+model = ExponentialSmoothing(df_monthly["sales"], trend="add", seasonal=None, seasonal_periods=None)
+fit_model = model.fit()
+df_monthly["forecast"] = fit_model.forecast(len(df_monthly))
+
+
+sns.set_style("whitegrid")
+fig, axes = plt.subplots(2, 2, figsize=(16, 12), constrained_layout=True)  # 2x2 layout
+fig.suptitle("Sales Analytics Dashboard", fontsize=20, fontweight='bold')
+
+
+sns.lineplot(ax=axes[0, 0], x=df_monthly["month"].astype(str), y=df_monthly["sales"], marker='o', label="Sales", color='blue')
+sns.lineplot(ax=axes[0, 0], x=df_monthly["month"].astype(str), y=df_monthly["moving_avg"], linestyle='--', label="3-Month Moving Average", color='red')
+axes[0, 0].set_title("Sales Trends Over Time", fontsize=14)
+axes[0, 0].set_xlabel("Month")
+axes[0, 0].set_ylabel("Sales")
+axes[0, 0].tick_params(axis='x', rotation=45)
+axes[0, 0].legend()
+axes[0, 0].grid(True, linestyle='--')
+
+
+top_products = df.groupby("product")["sales"].sum().sort_values(ascending=False).head(10)
+sns.barplot(ax=axes[0, 1], x=top_products.index, y=top_products.values, palette='viridis')
+axes[0, 1].set_title("Top-Performing Products", fontsize=14)
+axes[0, 1].set_xlabel("Product")
+axes[0, 1].set_ylabel("Total Sales")
+axes[0, 1].tick_params(axis='x', rotation=45)
+axes[0, 1].grid(True, linestyle='--')
+
+
+sns.histplot(ax=axes[1, 0], data=df, x="sales", bins=20, color='orange', kde=True)
+axes[1, 0].set_title("Sales Distribution", fontsize=14)
+axes[1, 0].set_xlabel("Sales")
+axes[1, 0].set_ylabel("Frequency")
+axes[1, 0].grid(True, linestyle='--')
+
+
+df_forecast = df_monthly.copy()
+sns.lineplot(ax=axes[1, 1], x=df_forecast["month"].astype(str), y=df_forecast["sales"], marker='o', label="Actual Sales", color='blue')
+sns.lineplot(ax=axes[1, 1], x=df_forecast["month"].astype(str), y=df_forecast["forecast"], linestyle='--', label="Forecasted Sales", color='green')
+axes[1, 1].set_title("Sales Forecasting with Exponential Smoothing", fontsize=14)
+axes[1, 1].set_xlabel("Month")
+axes[1, 1].set_ylabel("Sales")
+axes[1, 1].tick_params(axis='x', rotation=45)
+axes[1, 1].legend()
+axes[1, 1].grid(True, linestyle='--')
+plt.show()
